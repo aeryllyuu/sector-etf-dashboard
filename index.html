@@ -39,7 +39,8 @@ td.nm{font-weight:600}
  <div class="row">
   <div><span class="lbl">Timeframe</span><span class="seg" id="tf">
    <button class="opt" data-tf="30">1M</button><button class="opt" data-tf="90">3M</button>
-   <button class="opt" data-tf="180">6M</button><button class="opt active" data-tf="365">1Y</button>
+   <button class="opt" data-tf="180">6M</button><button class="opt" data-tf="ytd">YTD</button>
+   <button class="opt active" data-tf="365">1Y</button>
    <button class="opt" data-tf="1095">3Y</button><button class="opt" data-tf="0">Max</button></span></div>
   <div><span class="lbl">Scale</span><span class="seg" id="md">
    <button class="opt active" data-md="rebase">Rebased to 100</button>
@@ -52,7 +53,7 @@ td.nm{font-weight:600}
 <div class="panel">
  <table id="tbl"><thead><tr>
  <th data-k="name">ETF</th><th data-k="last">Last</th>
- <th data-k="w">1W %</th><th data-k="m">1M %</th><th data-k="q">3M %</th><th data-k="y">1Y %</th><th data-k="all">Since start %</th>
+ <th data-k="w">1W %</th><th data-k="m">1M %</th><th data-k="q">3M %</th><th data-k="ytd">YTD %</th><th data-k="y">1Y %</th><th data-k="all">Since start %</th>
  </tr></thead><tbody></tbody></table>
  <div class="foot">Source: ETF Performance.xlsx (<code>db</code> worksheet), daily adjusted index values 2018 → latest 2026-06-16. Within a tab, ETF price scales differ widely, so the default <b>Rebased to 100</b> view sets each line to 100 at the left edge for relative comparison; switch to <b>Price</b> for raw values. "Since start" uses each ETF's first available data point. Informational only — not investment advice.</div>
 </div>
@@ -65,6 +66,10 @@ let catIdx=0,tf=365,mode='rebase',chart;
 let on=[]; // per-item visibility for active category
 function lastIdx(p){for(let i=p.length-1;i>=0;i--)if(p[i]!=null)return i;return -1;}
 function valAgo(p,end,days){const t=end-days;for(let i=Math.max(0,t);i>=0;i--)if(p[i]!=null)return p[i];return null;}
+const curYear=dates[dates.length-1].slice(0,4);
+const ytdFirst=dates.findIndex(d=>d.slice(0,4)===curYear);
+const ytdBaseIdx=ytdFirst>0?ytdFirst-1:0; // last close of prior year = YTD baseline
+function ytdVal(p){for(let i=ytdBaseIdx;i>=0;i--)if(p[i]!=null)return p[i];return null;}
 function pct(a,b){return(a==null||b==null||b==0)?null:(a/b-1)*100;}
 function fmt(v,dd=2){return v==null?'–':v.toLocaleString(undefined,{minimumFractionDigits:dd,maximumFractionDigits:dd});}
 function sign(v){if(v==null)return '<span style=color:#64748b>–</span>';const c=v>=0?'up':'down';return '<span class="'+c+'">'+(v>=0?'+':'')+v.toFixed(2)+'%</span>';}
@@ -85,7 +90,7 @@ function draw(){
  // window based on the longest-history visible item
  let endRef=-1; cat.items.forEach((it,i)=>{if(on[i]){const e=lastIdx(it.prices);if(e>endRef)endRef=e;}});
  if(endRef<0)endRef=dates.length-1;
- let start=0; if(tf>0)start=Math.max(0,endRef-tf);
+ let start=0; if(tf==='ytd')start=Math.min(ytdBaseIdx,endRef);else if(tf>0)start=Math.max(0,endRef-tf);
  const labels=dates.slice(start,endRef+1);
  const ds=[];
  cat.items.forEach((it,i)=>{
@@ -108,13 +113,13 @@ function table(){
  const rows=cat.items.map(it=>{const ei=lastIdx(it.prices);const last=it.prices[ei];
   return {name:it.name,last,
    w:pct(last,valAgo(it.prices,ei,7)),m:pct(last,valAgo(it.prices,ei,30)),
-   q:pct(last,valAgo(it.prices,ei,90)),y:pct(last,valAgo(it.prices,ei,365)),
+   q:pct(last,valAgo(it.prices,ei,90)),ytd:pct(last,ytdVal(it.prices)),y:pct(last,valAgo(it.prices,ei,365)),
    all:pct(last,it.prices.find(v=>v!=null))};});
  rows.sort((a,b)=>{let x=a[sortK],y=b[sortK];if(typeof x==='string')return x.localeCompare(y)*(-sortDir);return((y??-1e18)-(x??-1e18))*(sortDir<0?1:-1);});
- tb.innerHTML=rows.map(r=>'<tr><td class="nm">'+r.name+'</td><td>'+fmt(r.last)+'</td><td>'+sign(r.w)+'</td><td>'+sign(r.m)+'</td><td>'+sign(r.q)+'</td><td>'+sign(r.y)+'</td><td>'+sign(r.all)+'</td></tr>').join('');
+ tb.innerHTML=rows.map(r=>'<tr><td class="nm">'+r.name+'</td><td>'+fmt(r.last)+'</td><td>'+sign(r.w)+'</td><td>'+sign(r.m)+'</td><td>'+sign(r.q)+'</td><td>'+sign(r.ytd)+'</td><td>'+sign(r.y)+'</td><td>'+sign(r.all)+'</td></tr>').join('');
 }
 document.querySelectorAll('#tbl th').forEach(th=>th.onclick=()=>{const k=th.dataset.k;if(sortK===k)sortDir*=-1;else{sortK=k;sortDir=-1;}table();});
-document.querySelectorAll('#tf .opt').forEach(b=>b.onclick=()=>{document.querySelectorAll('#tf .opt').forEach(x=>x.classList.remove('active'));b.classList.add('active');tf=+b.dataset.tf;draw();});
+document.querySelectorAll('#tf .opt').forEach(b=>b.onclick=()=>{document.querySelectorAll('#tf .opt').forEach(x=>x.classList.remove('active'));b.classList.add('active');tf=b.dataset.tf==='ytd'?'ytd':+b.dataset.tf;draw();});
 document.querySelectorAll('#md .opt').forEach(b=>b.onclick=()=>{document.querySelectorAll('#md .opt').forEach(x=>x.classList.remove('active'));b.classList.add('active');mode=b.dataset.md;draw();});
 initCat();
 </script></body></html>
