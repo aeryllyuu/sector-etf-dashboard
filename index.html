@@ -31,6 +31,8 @@ button.opt.active{background:var(--accent);border-color:var(--accent);color:#fff
 .mini .tk{font-size:10.5px;color:var(--muted)}
 .mini .px{font-size:18px;font-weight:700;margin:4px 0 1px}
 .mini .ch{font-size:12px;font-weight:600}
+.minitf{margin-top:8px;background:#0b1220;color:var(--ink);border:1px solid var(--line);border-radius:7px;font-size:11px;font-weight:600;padding:3px 6px;cursor:pointer}
+.minitf:focus{outline:none;border-color:var(--accent)}
 .spark{height:90px;margin-top:6px;position:relative}
 table{width:100%;border-collapse:collapse;font-size:13px}
 th,td{padding:9px 10px;text-align:right;border-bottom:1px solid var(--line)}
@@ -98,7 +100,7 @@ const TF=[["1M",30],["3M",90],["6M",180],["YTD","ytd"],["1Y",365],["3Y",1095],["
 const PALETTE=["#60a5fa","#34d399","#f59e0b","#f87171","#a78bfa","#22d3ee","#f472b6","#a3e635","#fb923c","#2dd4bf","#facc15","#c084fc","#4ade80","#fda4af","#38bdf8","#fbbf24"];
 const dates=DATA.dates, dObj=dates.map(d=>new Date(d+"T00:00:00"));
 const fmtL=new Intl.DateTimeFormat("en",{month:"short",day:"numeric",year:"2-digit"});
-let state={tab:0, tf:365, md:"rebase", hidden:{}, sigByTab:{}};
+let state={tab:0, tf:365, md:"rebase", hidden:{}, sigByTab:{}, miniTf:{}};
 
 document.getElementById("asof").textContent=DATA.updated;
 const totalETFs=new Set(DATA.categories.flatMap(c=>c.items.map(i=>i.code))).size;
@@ -144,8 +146,8 @@ function pct(arr,s){
 function lastVal(arr){for(let i=arr.length-1;i>=0;i--)if(arr[i]!==null&&arr[i]!==0)return arr[i];return null;}
 function pctTxt(v){ if(v===null) return '<span class="muted">&ndash;</span>'; const c=v>=0?"up":"down"; return `<span class="${c}">${v>=0?"+":""}${v.toFixed(2)}%</span>`; }
 
-let charts=[], sigChart=null;
-function destroy(){ charts.forEach(c=>c.destroy()); charts=[]; if(sigChart){sigChart.destroy();sigChart=null;} }
+let charts=[], sigChart=null, miniCharts=[];
+function destroy(){ charts.forEach(c=>c.destroy()); charts=[]; if(sigChart){sigChart.destroy();sigChart=null;} miniCharts.forEach(c=>c&&c.destroy()); miniCharts=[]; }
 let winObj=[];
 function baseOpts(small){
   return {responsive:true,maintainAspectRatio:false,animation:false,normalized:true,spanGaps:true,
@@ -202,22 +204,36 @@ function render(){
 
   // individual mini charts
   const grid=document.getElementById("grid"); grid.innerHTML="";
-  items.forEach((it,i)=>{
-    const lv=lastVal(it.prices), ch=pct(it.prices,s);
+  items.forEach((it)=>{
+    const lv=lastVal(it.prices);
+    const cur=state.miniTf[it.code]!=null?state.miniTf[it.code]:state.tf;
     const cell=document.createElement("div"); cell.className="mini";
     cell.innerHTML=`<div class="top"><div><div class="nm">${it.name}</div><div class="tk">${it.code}</div></div>
       <div style="text-align:right"><div class="px">${lv===null?"&ndash;":(+lv).toLocaleString(undefined,{maximumFractionDigits:2})}</div>
-      <div class="ch ${ch>=0?'up':'down'}">${ch===null?"":(ch>=0?"+":"")+ (ch===null?"":ch.toFixed(2))+"%"}</div></div></div>
+      <div class="ch" data-ch></div></div></div>
+      <select class="minitf">${TF.map(([k,v])=>`<option value="${v}"${String(v)===String(cur)?" selected":""}>${k}</option>`).join("")}</select>
       <div class="spark"><canvas></canvas></div>`;
     grid.appendChild(cell);
-    const mopt=baseOpts(true);
-    mopt.plugins.tooltip={enabled:true,callbacks:{
-      title:t=>t.length?fmtL.format(winObj[t[0].dataIndex]):"",
-      label:ctx=>{const raw=it.prices[s+ctx.dataIndex];return raw==null?"":"Price: "+(+raw).toLocaleString(undefined,{maximumFractionDigits:2});}
-    }};
-    charts.push(new Chart(cell.querySelector("canvas"),{type:"line",
-      data:{labels,datasets:[{label:it.code,data:rebaseSlice(it.prices,s),borderColor:"#38bdf8",backgroundColor:"rgba(56,189,248,.10)",fill:true}]},
-      options:mopt}));
+    const ctx=cell.querySelector("canvas"), chEl=cell.querySelector("[data-ch]");
+    let mc=null;
+    function drawMini(tfv){
+      const ms=windowStart(tfv);
+      const mlabels=dates.slice(ms).map((d,j)=>fmtL.format(dObj[ms+j]));
+      const mwin=dObj.slice(ms);
+      const ch=pct(it.prices,ms);
+      chEl.className="ch "+(ch>=0?"up":"down");
+      chEl.textContent= ch===null?"":(ch>=0?"+":"")+ch.toFixed(2)+"%";
+      if(mc){const ix=miniCharts.indexOf(mc);if(ix>=0)miniCharts.splice(ix,1);mc.destroy();}
+      const mopt=baseOpts(true);
+      mopt.plugins.tooltip={enabled:true,callbacks:{
+        title:t=>t.length?fmtL.format(mwin[t[0].dataIndex]):"",
+        label:cx=>{const raw=it.prices[ms+cx.dataIndex];return raw==null?"":"Price: "+(+raw).toLocaleString(undefined,{maximumFractionDigits:2});}
+      }};
+      mc=new Chart(ctx,{type:"line",data:{labels:mlabels,datasets:[{label:it.code,data:rebaseSlice(it.prices,ms),borderColor:"#38bdf8",backgroundColor:"rgba(56,189,248,.10)",fill:true}]},options:mopt});
+      miniCharts.push(mc);
+    }
+    drawMini(cur);
+    cell.querySelector(".minitf").onchange=e=>{const v=e.target.value==="ytd"?"ytd":(+e.target.value);state.miniTf[it.code]=v;drawMini(v);};
   });
 }
 
