@@ -152,7 +152,7 @@ function baseOpts(small){
     interaction:{mode:"index",intersect:false},
     plugins:{legend:{display:false},
       tooltip:{enabled:!small,callbacks:{title:it=>it.length?fmtL.format(winObj[it[0].dataIndex]):""}},
-      decimation:{enabled:true,algorithm:"lttb",samples:small?80:500}},
+      decimation:{enabled:!small,algorithm:"lttb",samples:500}},
     scales:{x:{type:"category",ticks:{color:"#8da2bd",maxRotation:0,autoSkip:true,maxTicksLimit:small?4:8,font:{size:small?9:10}},grid:{color:"rgba(255,255,255,.04)"}},
       y:{ticks:{color:"#8da2bd",font:{size:small?9:10}},grid:{color:"rgba(255,255,255,.06)"}}},
     elements:{point:{radius:0},line:{borderWidth:small?1.4:1.7,tension:.12}}};
@@ -210,9 +210,14 @@ function render(){
       <div class="ch ${ch>=0?'up':'down'}">${ch===null?"":(ch>=0?"+":"")+ (ch===null?"":ch.toFixed(2))+"%"}</div></div></div>
       <div class="spark"><canvas></canvas></div>`;
     grid.appendChild(cell);
+    const mopt=baseOpts(true);
+    mopt.plugins.tooltip={enabled:true,callbacks:{
+      title:t=>t.length?fmtL.format(winObj[t[0].dataIndex]):"",
+      label:ctx=>{const raw=it.prices[s+ctx.dataIndex];return raw==null?"":"Price: "+(+raw).toLocaleString(undefined,{maximumFractionDigits:2});}
+    }};
     charts.push(new Chart(cell.querySelector("canvas"),{type:"line",
       data:{labels,datasets:[{label:it.code,data:rebaseSlice(it.prices,s),borderColor:"#38bdf8",backgroundColor:"rgba(56,189,248,.10)",fill:true}]},
-      options:baseOpts(true)}));
+      options:mopt}));
   });
 }
 
