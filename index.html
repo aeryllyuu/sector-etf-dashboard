@@ -322,6 +322,16 @@ function initSingle(code,tfParam,mdParam){
      <div class="siglegend" id="uleg"></div>
      <div class="signote">${SIGNOTE}</div>
      <div class="chartbox" style="height:46vh"><canvas id="soloU"></canvas></div>
+   </div>
+   <div class="panel">
+     <div class="sec-title">Forward price return after each signal</div>
+     <div class="note" style="margin-bottom:10px">Price return measured from each signal date over each horizon. 5D = 5 trading days · YTD = signal &rarr; latest.</div>
+     <div style="overflow:auto;max-height:380px"><table id="ptbl"></table></div>
+   </div>
+   <div class="panel">
+     <div class="sec-title">Forward holding-units change after each signal</div>
+     <div class="note" style="margin-bottom:10px">Change in holding units from each signal date over each horizon. 5D = 5 trading days · YTD = signal &rarr; latest.</div>
+     <div style="overflow:auto;max-height:380px"><table id="utbl"></table></div>
    </div>`;
   const stf=document.getElementById("stf");
   TF.forEach(([k,v])=>{const b=document.createElement("button");b.className="opt";b.dataset.v=v;b.textContent=k;b.onclick=()=>{tf=(v==="ytd"?"ytd":v);draw();};stf.appendChild(b);});
@@ -370,6 +380,33 @@ function initSingle(code,tfParam,mdParam){
       Object.assign({label:"Buy",data:sig.buy},triBuy),
       Object.assign({label:"Sell",data:sig.sell},triSell)
     ]},options:optU});
+    // signal performance tables
+    const sigList=[];
+    for(let i=0;i<unit.length;i++){ if(sig.buy[i]!=null)sigList.push({gidx:sIdx+i,type:"Buy"}); if(sig.sell[i]!=null)sigList.push({gidx:sIdx+i,type:"Sell"}); }
+    sigList.reverse(); // newest first
+    buildSigTable(document.getElementById("ptbl"),it.prices,sigList);
+    buildSigTable(document.getElementById("utbl"),it.units,sigList);
+  }
+  function fwdRet(arr,gidx,h){
+    const base=arr[gidx]; if(base==null||base==0) return null;
+    let tgt=null;
+    if(h==="td5"){let c=0;for(let j=gidx+1;j<arr.length;j++){if(arr[j]!=null&&arr[j]!=0){c++;if(c===5){tgt=arr[j];break;}}}}
+    else{const cut=new Date(dObj[gidx]);cut.setDate(cut.getDate()+h);for(let j=gidx;j<arr.length;j++){if(dObj[j]>=cut&&arr[j]!=null&&arr[j]!=0){tgt=arr[j];break;}}}
+    if(tgt==null) return null;
+    return (tgt/base-1)*100;
+  }
+  function sinceRet(arr,gidx){const base=arr[gidx];if(base==null||base==0)return null;let last=null;for(let j=arr.length-1;j>=gidx;j--){if(arr[j]!=null&&arr[j]!=0){last=arr[j];break;}}return last==null?null:(last/base-1)*100;}
+  function pcell(v){if(v==null)return '<td><span style="color:var(--muted)">&ndash;</span></td>';return `<td><span class="${v>=0?'up':'down'}">${v>=0?'+':''}${v.toFixed(2)}%</span></td>`;}
+  function buildSigTable(el,arr,sigList){
+    const cols=[["5D","td5"],["1W",7],["1M",30],["3M",91],["6M",182],["YTD","since"]];
+    let h=`<thead><tr><th style="text-align:left">Date</th><th style="text-align:left">Signal</th>`+cols.map(c=>`<th>${c[0]}</th>`).join("")+`</tr></thead>`;
+    let b="<tbody>";
+    if(sigList.length===0) b+=`<tr><td colspan="8" style="text-align:left;color:var(--muted)">No signals in this timeframe.</td></tr>`;
+    sigList.forEach(s=>{
+      const cells=cols.map(c=>pcell(c[1]==="since"?sinceRet(arr,s.gidx):fwdRet(arr,s.gidx,c[1]))).join("");
+      b+=`<tr><td style="text-align:left">${fmtL.format(dObj[s.gidx])}</td><td style="text-align:left"><b class="${s.type==="Buy"?"up":"down"}">${s.type}</b></td>${cells}</tr>`;
+    });
+    el.innerHTML=h+b+"</tbody>";
   }
   draw();
 }
