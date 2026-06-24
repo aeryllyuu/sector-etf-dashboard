@@ -296,38 +296,80 @@ function initSingle(code,tfParam,mdParam){
   let tf = tfParam==="ytd"?"ytd":(tfParam!=null&&tfParam!==""?+tfParam:365);
   let md = mdParam==="price"?"price":"rebase";
   document.title=it.name+" — ETF Price Dashboard";
+  const SIGNOTE=`<b style="color:#22c55e">&#9650; Buy</b> = 5MA breaks above 10MA <b>and</b> holding units &gt; 5MA &nbsp;&middot;&nbsp; <b style="color:#ef4444">&#9660; Sell</b> = 5MA breaks below 10MA <b>and</b> holding units &lt; 5MA`;
   wrap.innerHTML=`
    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:6px">
      <div><h1 style="margin:0">${it.name}</h1><div class="sub" id="ssub" style="margin:0"></div></div>
      <a href="./" style="color:#60a5fa;font-size:13px;text-decoration:none">&larr; Back to dashboard</a>
    </div>
    <div class="panel">
-     <div class="row">
+     <div class="row" style="margin:0">
        <div><span class="lbl">Timeframe</span><span class="seg" id="stf"></span></div>
        <div><span class="lbl">Scale</span><span class="seg" id="smd">
          <button class="opt" data-md="rebase">Rebased to 100</button>
          <button class="opt" data-md="price">Price</button></span></div>
      </div>
-     <div class="chartbox" style="height:74vh"><canvas id="solo"></canvas></div>
+   </div>
+   <div class="panel">
+     <div class="sec-title">Price &mdash; with trading signals</div>
+     <div class="note" id="pxsub" style="margin-bottom:8px"></div>
+     <div class="siglegend" id="pxleg"></div>
+     <div class="chartbox" style="height:46vh"><canvas id="soloPx"></canvas></div>
+   </div>
+   <div class="panel">
+     <div class="sec-title">Holding units &mdash; with 5MA, 10MA &amp; trading signals</div>
+     <div class="note" id="usub" style="margin-bottom:8px"></div>
+     <div class="siglegend" id="uleg"></div>
+     <div class="signote">${SIGNOTE}</div>
+     <div class="chartbox" style="height:46vh"><canvas id="soloU"></canvas></div>
    </div>`;
   const stf=document.getElementById("stf");
   TF.forEach(([k,v])=>{const b=document.createElement("button");b.className="opt";b.dataset.v=v;b.textContent=k;b.onclick=()=>{tf=(v==="ytd"?"ytd":v);draw();};stf.appendChild(b);});
   [...document.querySelectorAll("#smd .opt")].forEach(b=>{b.onclick=()=>{md=b.dataset.md;draw();};});
   function reb(arr,sIdx){const seg=arr.slice(sIdx);if(md==="price")return seg;let base=null;for(const v of seg){if(v!=null&&v!=0){base=v;break;}}if(base==null)return seg.map(()=>null);return seg.map(v=>v==null?null:+((v/base)*100).toFixed(3));}
-  let chart=null;
+  const triBuy={backgroundColor:"#22c55e",pointBackgroundColor:"#22c55e",pointBorderColor:"#0b1220",pointBorderWidth:1.5,showLine:false,pointStyle:"triangle",pointRadius:11,pointHoverRadius:13,order:0};
+  const triSell={backgroundColor:"#ef4444",pointBackgroundColor:"#ef4444",pointBorderColor:"#0b1220",pointBorderWidth:1.5,showLine:false,pointStyle:"triangle",rotation:180,pointRadius:11,pointHoverRadius:13,order:0};
+  let pc=null, uc=null;
   function draw(){
     const sIdx=windowStart(tf);
     const labels=dates.slice(sIdx).map((d,j)=>fmtL.format(dObj[sIdx+j]));
     const win=dObj.slice(sIdx);
-    const tfLab=TF.find(t=>String(t[1])===String(tf));
-    const ch=pct(it.prices,sIdx), lv=lastVal(it.prices);
-    document.getElementById("ssub").innerHTML=`${it.code} · last ${lv==null?"&ndash;":(+lv).toLocaleString(undefined,{maximumFractionDigits:2})} · ${md==="rebase"?"rebased to 100":"price"} · ${tfLab?tfLab[0]:""} · <span class="${ch>=0?'up':'down'}">${ch==null?"":(ch>=0?"+":"")+ch.toFixed(2)+"%"}</span>`;
+    const tfLab=TF.find(t=>String(t[1])===String(tf)); const tfTxt=tfLab?tfLab[0]:"";
+    const lvP=lastVal(it.prices), chP=pct(it.prices,sIdx);
+    const lvU=lastVal(it.units),  chU=pct(it.units,sIdx);
+    document.getElementById("ssub").innerHTML=`${it.code} · ${tfTxt} · ${md==="rebase"?"rebased to 100":"raw values"}`;
     [...document.querySelectorAll("#stf .opt")].forEach(b=>b.classList.toggle("active",String(b.dataset.v)===String(tf)));
     [...document.querySelectorAll("#smd .opt")].forEach(b=>b.classList.toggle("active",b.dataset.md===md));
-    if(chart)chart.destroy();
-    const opt=baseOpts(false);
-    opt.plugins.tooltip={enabled:true,callbacks:{title:t=>t.length?fmtL.format(win[t[0].dataIndex]):"",label:cx=>{const raw=it.prices[sIdx+cx.dataIndex];return raw==null?"":"Price: "+(+raw).toLocaleString(undefined,{maximumFractionDigits:2});}}};
-    chart=new Chart(document.getElementById("solo"),{type:"line",data:{labels,datasets:[{label:it.code,data:reb(it.prices,sIdx),borderColor:"#38bdf8",backgroundColor:"rgba(56,189,248,.10)",fill:true,borderWidth:1.9}]},options:opt});
+    // signals computed on holding units
+    const unit=reb(it.units,sIdx), ma5=reb(movingAvg(it.units,5),sIdx), ma10=reb(movingAvg(it.units,10),sIdx);
+    const sig=computeSignals(unit,ma5,ma10);
+    const price=reb(it.prices,sIdx);
+    const buyPx=sig.buy.map((v,i)=> v!=null?(price[i]==null?null:price[i]):null);
+    const sellPx=sig.sell.map((v,i)=> v!=null?(price[i]==null?null:price[i]):null);
+    // PRICE chart
+    document.getElementById("pxsub").innerHTML=`last ${lvP==null?"&ndash;":(+lvP).toLocaleString(undefined,{maximumFractionDigits:2})} · <span class="${chP>=0?'up':'down'}">${chP==null?"":(chP>=0?"+":"")+chP.toFixed(2)+"%"}</span> · signals from holding-unit conditions`;
+    document.getElementById("pxleg").innerHTML=`<span><i style="background:#38bdf8"></i>Price</span><span><i class="tri up"></i>Buy</span><span><i class="tri dn"></i>Sell</span>`;
+    const optP=baseOpts(false);
+    optP.plugins.tooltip={enabled:true,callbacks:{title:t=>t.length?fmtL.format(win[t[0].dataIndex]):"",label:cx=>{if(cx.datasetIndex>0)return cx.dataset.label;const raw=it.prices[sIdx+cx.dataIndex];return raw==null?"":"Price: "+(+raw).toLocaleString(undefined,{maximumFractionDigits:2});}}};
+    if(pc)pc.destroy();
+    pc=new Chart(document.getElementById("soloPx"),{type:"line",data:{labels,datasets:[
+      {label:"Price",data:price,borderColor:"#38bdf8",backgroundColor:"rgba(56,189,248,.10)",fill:true,borderWidth:1.9,order:3},
+      Object.assign({label:"Buy",data:buyPx},triBuy),
+      Object.assign({label:"Sell",data:sellPx},triSell)
+    ]},options:optP});
+    // HOLDING UNITS chart
+    document.getElementById("usub").innerHTML=`last ${lvU==null?"&ndash;":(+lvU).toLocaleString(undefined,{maximumFractionDigits:2})} · <span class="${chU>=0?'up':'down'}">${chU==null?"":(chU>=0?"+":"")+chU.toFixed(2)+"%"}</span>`;
+    document.getElementById("uleg").innerHTML=`<span><i style="background:#e7edf6"></i>Holding units</span><span><i style="background:var(--ma5)"></i>5MA</span><span><i style="background:var(--ma10)"></i>10MA</span><span><i class="tri up"></i>Buy</span><span><i class="tri dn"></i>Sell</span>`;
+    const optU=baseOpts(false);
+    optU.plugins.tooltip={enabled:true,callbacks:{title:t=>t.length?fmtL.format(win[t[0].dataIndex]):"",label:cx=>{if(cx.dataset.label!=="Holding units")return cx.dataset.label;const raw=it.units[sIdx+cx.dataIndex];return raw==null?"":"Units: "+(+raw).toLocaleString(undefined,{maximumFractionDigits:2});}}};
+    if(uc)uc.destroy();
+    uc=new Chart(document.getElementById("soloU"),{type:"line",data:{labels,datasets:[
+      {label:"Holding units",data:unit,borderColor:"#e7edf6",backgroundColor:"rgba(231,237,246,.05)",fill:true,borderWidth:1.8,order:3},
+      {label:"5MA",data:ma5,borderColor:"#f59e0b",borderWidth:1.4,fill:false,order:2},
+      {label:"10MA",data:ma10,borderColor:"#38bdf8",borderWidth:1.4,fill:false,borderDash:[5,3],order:2},
+      Object.assign({label:"Buy",data:sig.buy},triBuy),
+      Object.assign({label:"Sell",data:sig.sell},triSell)
+    ]},options:optU});
   }
   draw();
 }
