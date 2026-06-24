@@ -351,7 +351,8 @@ function initSingle(code,tfParam,mdParam){
     [...document.querySelectorAll("#stf .opt")].forEach(b=>b.classList.toggle("active",String(b.dataset.v)===String(tf)));
     [...document.querySelectorAll("#smd .opt")].forEach(b=>b.classList.toggle("active",b.dataset.md===md));
     // signals computed on holding units
-    const unit=reb(it.units,sIdx), ma5=reb(movingAvg(it.units,5),sIdx), ma10=reb(movingAvg(it.units,10),sIdx);
+    const rawM5=movingAvg(it.units,5), rawM10=movingAvg(it.units,10);
+    const unit=reb(it.units,sIdx), ma5=reb(rawM5,sIdx), ma10=reb(rawM10,sIdx);
     const sig=computeSignals(unit,ma5,ma10);
     const price=reb(it.prices,sIdx);
     const buyPx=sig.buy.map((v,i)=> v!=null?(price[i]==null?null:price[i]):null);
@@ -371,7 +372,14 @@ function initSingle(code,tfParam,mdParam){
     document.getElementById("usub").innerHTML=`last ${lvU==null?"&ndash;":(+lvU).toLocaleString(undefined,{maximumFractionDigits:2})} · <span class="${chU>=0?'up':'down'}">${chU==null?"":(chU>=0?"+":"")+chU.toFixed(2)+"%"}</span>`;
     document.getElementById("uleg").innerHTML=`<span><i style="background:#e7edf6"></i>Holding units</span><span><i style="background:var(--ma5)"></i>5MA</span><span><i style="background:var(--ma10)"></i>10MA</span><span><i class="tri up"></i>Buy</span><span><i class="tri dn"></i>Sell</span>`;
     const optU=baseOpts(false);
-    optU.plugins.tooltip={enabled:true,callbacks:{title:t=>t.length?fmtL.format(win[t[0].dataIndex]):"",label:cx=>{if(cx.dataset.label!=="Holding units")return cx.dataset.label;const raw=it.units[sIdx+cx.dataIndex];return raw==null?"":"Units: "+(+raw).toLocaleString(undefined,{maximumFractionDigits:2});}}};
+    const fmtN=v=>(+v).toLocaleString(undefined,{maximumFractionDigits:2});
+    optU.plugins.tooltip={enabled:true,callbacks:{title:t=>t.length?fmtL.format(win[t[0].dataIndex]):"",label:cx=>{
+      const gi=sIdx+cx.dataIndex, L=cx.dataset.label;
+      if(L==="Holding units"){const v=it.units[gi];return v==null?"":"Holding units: "+fmtN(v);}
+      if(L==="5MA"){const v=rawM5[gi];return v==null?"":"5MA: "+fmtN(v);}
+      if(L==="10MA"){const v=rawM10[gi];return v==null?"":"10MA: "+fmtN(v);}
+      return L;
+    }}};
     if(uc)uc.destroy();
     uc=new Chart(document.getElementById("soloU"),{type:"line",data:{labels,datasets:[
       {label:"Holding units",data:unit,borderColor:"#e7edf6",backgroundColor:"rgba(231,237,246,.05)",fill:true,borderWidth:1.8,order:3},
