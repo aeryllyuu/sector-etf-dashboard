@@ -49,7 +49,17 @@ td.nm{font-weight:600}
 .siglegend i.up{border-bottom:8px solid var(--buy)}
 .siglegend i.dn{border-top:8px solid var(--sell)}
 .signote{font-size:11.5px;color:var(--muted);margin:2px 0 12px;line-height:1.5}
-@media(max-width:640px){.chartbox{height:62vh}.grid{grid-template-columns:1fr}}
+.minirow{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.expand{cursor:pointer;border:1px solid var(--line);background:transparent;color:var(--muted);font-size:11px;font-weight:600;padding:3px 9px;border-radius:7px}
+.expand:hover{color:var(--ink);border-color:var(--accent)}
+.modal{position:fixed;inset:0;background:rgba(3,7,18,.72);display:none;align-items:center;justify-content:center;z-index:50;padding:20px}
+.modal.open{display:flex}
+.modal .box{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px 20px;width:min(1040px,96vw);max-height:92vh;overflow:auto}
+.modal .mhead{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px}
+.modal .mbody{height:64vh;position:relative}
+.close{cursor:pointer;border:none;background:transparent;color:var(--muted);font-size:26px;line-height:1}
+.close:hover{color:var(--ink)}
+@media(max-width:640px){.chartbox{height:62vh}.grid{grid-template-columns:1fr}.modal .mbody{height:70vh}}
 </style></head><body><div class="wrap">
 <h1>ETF Price Dashboard</h1>
 <div class="sub" id="sub"></div>
@@ -92,6 +102,17 @@ td.nm{font-weight:600}
  <div class="sec-title">Individual ETF price charts</div>
  <div class="grid" id="grid"></div>
 </div>
+</div>
+
+<div class="modal" id="modal">
+ <div class="box">
+  <div class="mhead">
+   <div><div class="sec-title" id="mTitle" style="margin:0 0 2px"></div><div class="note" id="mSub"></div></div>
+   <button class="close" id="mClose" title="Close">&times;</button>
+  </div>
+  <div class="seg" id="mTf" style="margin-bottom:12px"></div>
+  <div class="mbody"><canvas id="mCanvas"></canvas></div>
+ </div>
 </div>
 
 <script>
@@ -211,10 +232,12 @@ function render(){
     cell.innerHTML=`<div class="top"><div><div class="nm">${it.name}</div><div class="tk">${it.code}</div></div>
       <div style="text-align:right"><div class="px">${lv===null?"&ndash;":(+lv).toLocaleString(undefined,{maximumFractionDigits:2})}</div>
       <div class="ch" data-ch></div></div></div>
-      <select class="minitf">${TF.map(([k,v])=>`<option value="${v}"${String(v)===String(cur)?" selected":""}>${k}</option>`).join("")}</select>
+      <div class="minirow"><select class="minitf">${TF.map(([k,v])=>`<option value="${v}"${String(v)===String(cur)?" selected":""}>${k}</option>`).join("")}</select>
+      <button class="expand" title="Expand chart">&#10530; Expand</button></div>
       <div class="spark"><canvas></canvas></div>`;
     grid.appendChild(cell);
     const ctx=cell.querySelector("canvas"), chEl=cell.querySelector("[data-ch]");
+    cell.querySelector(".expand").onclick=()=>openModal(it.code, state.miniTf[it.code]!=null?state.miniTf[it.code]:state.tf);
     let mc=null;
     function drawMini(tfv){
       const ms=windowStart(tfv);
@@ -276,11 +299,46 @@ function buildSig(items,s,labels){
   draw(cur);
 }
 
+// expand modal
+let modalChart=null, modalCode=null, modalTf=null;
+function openModal(code,tf){
+  modalCode=code; modalTf=tf;
+  document.getElementById("modal").classList.add("open");
+  drawModal();
+}
+function drawModal(){
+  const it=curItems().find(x=>x.code===modalCode); if(!it){closeModal();return;}
+  const ms=windowStart(modalTf);
+  const mlabels=dates.slice(ms).map((d,j)=>fmtL.format(dObj[ms+j]));
+  const mwin=dObj.slice(ms);
+  const tfLab=TF.find(t=>String(t[1])===String(modalTf));
+  const ch=pct(it.prices,ms), lv=lastVal(it.prices);
+  document.getElementById("mTitle").textContent=it.name;
+  document.getElementById("mSub").innerHTML=`${it.code} · last ${lv===null?"&ndash;":(+lv).toLocaleString(undefined,{maximumFractionDigits:2})} · ${state.md==="rebase"?"rebased to 100":"price"} · ${tfLab?tfLab[0]:""} · <span class="${ch>=0?'up':'down'}">${ch===null?"":(ch>=0?"+":"")+ch.toFixed(2)+"%"}</span>`;
+  [...document.querySelectorAll("#mTf .opt")].forEach(b=>b.classList.toggle("active",String(b.dataset.v)===String(modalTf)));
+  if(modalChart){modalChart.destroy();modalChart=null;}
+  const opt=baseOpts(false);
+  opt.plugins.tooltip={enabled:true,callbacks:{
+    title:t=>t.length?fmtL.format(mwin[t[0].dataIndex]):"",
+    label:cx=>{const raw=it.prices[ms+cx.dataIndex];return raw==null?"":"Price: "+(+raw).toLocaleString(undefined,{maximumFractionDigits:2});}
+  }};
+  modalChart=new Chart(document.getElementById("mCanvas"),{type:"line",
+    data:{labels:mlabels,datasets:[{label:it.code,data:rebaseSlice(it.prices,ms),borderColor:"#38bdf8",backgroundColor:"rgba(56,189,248,.10)",fill:true,borderWidth:1.9}]},
+    options:opt});
+}
+function closeModal(){document.getElementById("modal").classList.remove("open");if(modalChart){modalChart.destroy();modalChart=null;}modalCode=null;}
+(function(){const mtf=document.getElementById("mTf");
+  TF.forEach(([k,v])=>{const b=document.createElement("button");b.className="opt";b.dataset.v=v;b.textContent=k;b.onclick=()=>{modalTf=(v==="ytd"?"ytd":v);drawModal();};mtf.appendChild(b);});
+  document.getElementById("mClose").onclick=closeModal;
+  document.getElementById("modal").addEventListener("click",e=>{if(e.target.id==="modal")closeModal();});
+  document.addEventListener("keydown",e=>{if(e.key==="Escape")closeModal();});
+})();
+
 // tabs
 const tabsEl=document.getElementById("tabs");
 DATA.categories.forEach((c,i)=>{
   const b=document.createElement("button"); b.className="tab"+(i===0?" active":""); b.textContent=c.name;
-  b.onclick=()=>{state.tab=i;state.hidden={};[...tabsEl.children].forEach((x,j)=>x.classList.toggle("active",j===i));render();};
+  b.onclick=()=>{closeModal();state.tab=i;state.hidden={};[...tabsEl.children].forEach((x,j)=>x.classList.toggle("active",j===i));render();};
   tabsEl.appendChild(b);
 });
 document.getElementById("tf").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;
