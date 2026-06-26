@@ -87,7 +87,7 @@ td.nm{font-weight:600}
  <div class="note" id="sigMeta" style="margin-bottom:10px"></div>
  <div class="chips" id="sigSel"></div>
  <div class="siglegend" id="sigLegend"></div>
- <div class="signote"><b style="color:#22c55e">&#9650; Buy</b> = 5MA breaks above 10MA, with 5MA &gt; 10MA &gt; 15MA &nbsp;&middot;&nbsp; <b style="color:#ef4444">&#9660; Sell</b> = 5MA breaks below 10MA, with 5MA &lt; 10MA &lt; 15MA</div>
+ <div class="signote"><b style="color:#22c55e">&#9650; Buy</b> = 5MA breaks above 10MA, with 5MA &gt; 10MA &gt; 15MA &nbsp;&middot;&nbsp; <b style="color:#ef4444">&#9660; Sell</b> = 5MA &lt; 10MA &lt; 15MA</div>
  <div class="chartbox"><canvas id="sig"></canvas></div>
 </div>
 
@@ -136,17 +136,19 @@ function movingAvg(arr,n){
   for(let i=0;i<arr.length;i++){const v=arr[i];if(v!==null&&v!==0){buf.push(v);if(buf.length>n)buf.shift();if(buf.length===n)out[i]=+(buf.reduce((a,b)=>a+b,0)/n).toFixed(4);}}
   return out;
 }
-// Buy  = 5MA breaks above 10MA, with 5MA>10MA and 10MA>15MA
-// Sell = 5MA breaks below 10MA, with 5MA<10MA and 10MA<15MA
+// Buy  = 5MA breaks above 10MA, with 5MA>10MA and 10MA>15MA (at the crossover)
+// Sell = 5MA<10MA<15MA  (marked when that alignment first becomes true)
 // a=5MA, b=10MA, c=15MA; markers placed on series u
 function computeSignals(u,a,b,c){
   const buy=u.map(()=>null), sell=u.map(()=>null);
+  let prevSell=false;
   for(let i=1;i<u.length;i++){
     if([a[i],b[i],c[i],a[i-1],b[i-1]].some(x=>x==null)) continue;
     const crossUp=a[i-1]<=b[i-1]&&a[i]>b[i];
-    const crossDn=a[i-1]>=b[i-1]&&a[i]<b[i];
     if(crossUp&&a[i]>b[i]&&b[i]>c[i]&&u[i]!=null) buy[i]=u[i];
-    if(crossDn&&a[i]<b[i]&&b[i]<c[i]&&u[i]!=null) sell[i]=u[i];
+    const sellState=(a[i]<b[i]&&b[i]<c[i]);
+    if(sellState&&!prevSell&&u[i]!=null) sell[i]=u[i];
+    prevSell=sellState;
   }
   return {buy,sell};
 }
@@ -303,7 +305,7 @@ function initSingle(code,tfParam,mdParam){
   let tf = tfParam==="ytd"?"ytd":(tfParam!=null&&tfParam!==""?+tfParam:365);
   let md = mdParam==="price"?"price":"rebase";
   document.title=it.name+" — ETF Price Dashboard";
-  const SIGNOTE=`<b style="color:#22c55e">&#9650; Buy</b> = 5MA breaks above 10MA, with 5MA &gt; 10MA &gt; 15MA &nbsp;&middot;&nbsp; <b style="color:#ef4444">&#9660; Sell</b> = 5MA breaks below 10MA, with 5MA &lt; 10MA &lt; 15MA`;
+  const SIGNOTE=`<b style="color:#22c55e">&#9650; Buy</b> = 5MA breaks above 10MA, with 5MA &gt; 10MA &gt; 15MA &nbsp;&middot;&nbsp; <b style="color:#ef4444">&#9660; Sell</b> = 5MA &lt; 10MA &lt; 15MA`;
   wrap.innerHTML=`
    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:6px">
      <div><h1 style="margin:0">${it.name}</h1><div class="sub" id="ssub" style="margin:0"></div></div>
